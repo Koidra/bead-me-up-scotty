@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { toast } from "sonner";
 import { type BeadType } from "@/lib/schema";
 import Link from "next/link";
 import { useBeads } from "@/hooks/use-beads";
@@ -24,14 +25,23 @@ import { CreateBeadModal } from "@/components/create-bead-modal";
 import { CommandPalette } from "@/components/command-palette";
 import { NotificationWatcher } from "@/components/notification-watcher";
 
-export function AppShell({ projectId }: { projectId: string }) {
+export function AppShell({
+  projectId,
+  initialBeadId,
+}: {
+  projectId: string;
+  /** Deep link (/p/<project>/<bead>): open with this bead's drawer showing. */
+  initialBeadId?: string;
+}) {
   const [view, setView] = useLastView(projectId);
   const { toggle: toggleTheme } = useTheme();
   // Drawer navigation TRAIL, not a single id: clicking a subtask from its
   // parent used to replace the drawer outright, leaving no way back (GH #15).
   // The visible bead is the last entry.
-  const [openStack, setOpenStack] = React.useState<string[]>([]);
-  const openId = openStack.length ? openStack[openStack.length - 1] : null;
+  const [openStack, setOpenStack] = React.useState<string[]>(
+    initialBeadId ? [initialBeadId] : [],
+  );
+  const rawOpenId = openStack.length ? openStack[openStack.length - 1] : null;
   const [palette, setPalette] = React.useState(false);
   const [create, setCreate] = React.useState<{
     open: boolean;
@@ -45,6 +55,15 @@ export function AppShell({ projectId }: { projectId: string }) {
   const { live } = useBeadsStream(projectId);
   const beads = React.useMemo(() => data?.beads ?? [], [data]);
   const index = React.useMemo(() => makeIndex(beads), [beads]);
+
+  // An id the loaded project doesn't have (deep-link typo, deleted bead) is
+  // DERIVED to null rather than cleared with setState — the codebase stays off
+  // setState-in-effect (see theme-provider.tsx) — so the drawer closes while
+  // the trail stays put; any interaction (Esc, opening a bead) resets it.
+  // Until data arrives every id is taken at its word, which keeps a deep link's
+  // URL stable through the initial load.
+  const loaded = !isLoading && !error && !!data;
+  const openId = rawOpenId && loaded && !index.has(rawOpenId) ? null : rawOpenId;
 
   // RESET. Every caller outside the drawer (board, list, epics, activity,
   // needs-you, palette, assist panel) means "start here", not "continue a trail".
@@ -70,6 +89,37 @@ export function AppShell({ projectId }: { projectId: string }) {
       return next;
     });
   }, [index]);
+  // Keep the address bar a permalink: /p/<project>/<bead> while a drawer is
+  // open, /p/<project> otherwise, so the URL is always shareable. Native
+  // history.replaceState (which the app router syncs with, per the shallow-
+  // routing guide) rather than router.replace: drawer browsing shouldn't
+  // re-run the server route or grow the back stack.
+  React.useEffect(() => {
+    const base = `/p/${encodeURIComponent(projectId)}`;
+    const target = openId ? `${base}/${encodeURIComponent(openId)}` : base;
+    if (window.location.pathname !== target) {
+      window.history.replaceState(
+        window.history.state,
+        "",
+        target + window.location.search + window.location.hash,
+      );
+    }
+  }, [projectId, openId]);
+
+  // A missing id would otherwise just be a drawer that silently never opens;
+  // say so once the data is in. The ref dedupes across refetches — `index` is
+  // rebuilt every poll, and a still-missing id must not re-toast each time.
+  const missingToasted = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!loaded || !rawOpenId || index.has(rawOpenId)) {
+      missingToasted.current = null;
+      return;
+    }
+    if (missingToasted.current === rawOpenId) return;
+    missingToasted.current = rawOpenId;
+    toast.error(`Bead ${rawOpenId} not found in this project`);
+  }, [loaded, rawOpenId, index]);
+
   // Options object rather than positional args so future presets (assignee,
   // priority) can be added without churning every call site again.
   const openCreate = React.useCallback(

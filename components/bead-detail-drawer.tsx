@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { toast } from "sonner";
 import {
   Sheet,
   SheetContent,
@@ -147,6 +148,20 @@ function DrawerBody({
   const del = useDeleteBead();
   const createGate = useCreateGate();
 
+  // Same clipboard handling as CopyableId, but for the bead's permalink URL —
+  // the /p/<project>/<bead> route this drawer is addressable at.
+  const copyLink = () => {
+    const url = `${window.location.origin}/p/${encodeURIComponent(projectId)}/${encodeURIComponent(bead.id)}`;
+    if (!navigator.clipboard) {
+      toast.error("Clipboard unavailable in this context");
+      return;
+    }
+    navigator.clipboard.writeText(url).then(
+      () => toast.success(`Copied link to ${bead.id}`),
+      () => toast.error("Couldn’t copy to clipboard"),
+    );
+  };
+
   const [draft, setDraft] = React.useState("");
   const [addingDep, setAddingDep] = React.useState(false);
   const [depTarget, setDepTarget] = React.useState("");
@@ -264,6 +279,9 @@ function DrawerBody({
         <CopyableId id={bead.id} className="font-mono text-[13px] text-[var(--text-2)]" />
         <StatusChip status={bead.status} />
         <span className="flex-1" />
+        <IconBtn title="Copy link" onClick={copyLink}>
+          <Icon name="link" size={15} />
+        </IconBtn>
         <IconBtn
           title={editing ? "Stop editing" : "Edit title & description"}
           onClick={editing ? cancelEdit : startEdit}

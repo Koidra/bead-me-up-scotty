@@ -16,7 +16,7 @@ import { useOrder, useSetOrder } from "@/hooks/use-order";
 import { useBoardPrefs } from "@/hooks/use-board-prefs";
 import { isBlocked, childrenCountMap } from "@/lib/beads-view";
 import { FilterBar } from "@/components/filter-bar";
-import { matchesFilters, emptyFilters, labelOptionsFrom, type Filters } from "@/lib/filters";
+import { matchesFilters, emptyFilters, labelOptionsFrom, epicOptionsFrom, type Filters } from "@/lib/filters";
 import { BOARD_COLUMNS as COLUMNS, sortByOrder as sortCards } from "@/lib/board-columns";
 import { Column } from "./column";
 import type { Bead } from "@/lib/schema";
@@ -33,6 +33,7 @@ export function Board() {
   // Derived from ALL beads (not the filtered set) so selecting one label
   // doesn't make the remaining options vanish from the dropdown.
   const labelOptions = React.useMemo(() => labelOptionsFrom(beads), [beads]);
+  const epicOptions = React.useMemo(() => epicOptionsFrom(beads, index), [beads, index]);
   // One pass over all beads, not childrenOf() per card — that would be O(n^2)
   // on a large board.
   const childCounts = React.useMemo(() => childrenCountMap(beads), [beads]);
@@ -50,9 +51,9 @@ export function Board() {
     (b: Bead) => {
       if (b.issue_type === "epic") return false;
       if (!showArchived && (b.labels ?? []).includes("archived")) return false;
-      return matchesFilters(b, filters, humanAllowlist);
+      return matchesFilters(b, filters, humanAllowlist, index);
     },
-    [filters, showArchived, humanAllowlist],
+    [filters, showArchived, humanAllowlist, index],
   );
 
   const visible = React.useMemo(() => beads.filter(matchFilters), [beads, matchFilters]);
@@ -136,6 +137,7 @@ export function Board() {
           filters={filters}
           onChange={setFilters}
           labelOptions={labelOptions}
+          epicOptions={epicOptions}
           showArchived={showArchived}
           onShowArchived={setShowArchived}
         />

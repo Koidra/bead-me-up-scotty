@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { toast } from "sonner";
 import {
   Sheet,
   SheetContent,
@@ -247,6 +248,15 @@ function DrawerBody({
     return [...s].sort();
   }, [beads]);
 
+  // Names already assigned somewhere in the project, with the local actor first
+  // so "assign it to me" stays one keystroke — the same set the create dialog
+  // offers. bd takes any string, so these are suggestions, not the vocabulary.
+  const assigneeSuggestions = React.useMemo(() => {
+    const names = new Set(beads.map((b) => b.assignee).filter(Boolean) as string[]);
+    names.delete(actor);
+    return [actor, ...[...names].sort()];
+  }, [actor, beads]);
+
   return (
     <>
       <SheetDescription className="sr-only">Bead details for {bead.id}</SheetDescription>
@@ -370,18 +380,17 @@ function DrawerBody({
               ))}
             </select>
           </label>
-          <div className="flex flex-col gap-[5px]">
-            <span className={fieldLabel}>Assignee</span>
-            <div className="flex h-9 items-center gap-[7px] rounded-[9px] border border-border bg-[var(--surface-2)] px-[10px]">
-              <span
-                className="flex h-[18px] w-[18px] items-center justify-center rounded-full text-[9px] font-semibold text-white"
-                style={{ background: avatarColor(bead.assignee ?? "") }}
-              >
-                {initials(bead.assignee ?? "")}
-              </span>
-              <span className="text-[13px]">{bead.assignee || "Unassigned"}</span>
-            </div>
-          </div>
+          {/* Keyed on the saved value so a reassignment from elsewhere — an SSE
+              push, another tab — remounts the field with a fresh draft, no
+              useEffect sync needed. */}
+          <AssigneeField
+            key={bead.assignee ?? ""}
+            bead={bead}
+            suggestions={assigneeSuggestions}
+            onChange={(assignee, onError) =>
+              update.mutate({ id: bead.id, patch: { assignee } }, { onError })
+            }
+          />
           <div className="flex flex-col gap-[5px]">
             {/* Labelled by what the parent actually IS. Only epics get routed to
                 the Epics screen — it renders issue_type === "epic" only, so
@@ -962,6 +971,97 @@ function DrawerBody({
 
 function Section({ children }: { children: React.ReactNode }) {
   return <div className="mb-[18px]">{children}</div>;
+}
+
+/**
+ * Set or clear a bead's assignee. A datalist-backed input rather than the create
+ * dialog's <select>: `bd update --assignee` accepts any string, so the names
+ * already in the project are a shortcut rather than the whole vocabulary, and an
+ * empty value is how you unassign (`--assignee ""` does clear the field —
+ * verified against bd 1.2.1, unlike `--set-labels ""`, which is dropped).
+ *
+ * Strictly ONE name. Unlike labels, which are a join table, assignee is a single
+ * column that doubles as the claim/lease holder (`bd update --claim`,
+ * `--if-assignee`, `bd reclaim`), and `bd list -a` matches it by exact string —
+ * so a list stuffed in here would quietly drop the bead out of the `bd ready`
+ * loop the agents run on.
+ *
+ * bd refuses to hand a bead someone else is holding in_progress to another
+ * actor. That comes back through the shared mutation error toast, and the draft
+ * is rolled back, so a name that never landed can't linger in the box.
+ */
+function AssigneeField({
+  bead,
+  suggestions,
+  onChange,
+}: {
+  bead: Bead;
+  suggestions: string[];
+  onChange: (assignee: string, onError: () => void) => void;
+}) {
+  const current = bead.assignee ?? "";
+  const [draft, setDraft] = React.useState(current);
+  const listId = `assignee-${bead.id}`;
+
+  const commit = () => {
+    const next = draft.trim();
+    // Refuse the one list separator a user might reasonably reach for — the
+    // create dialog trains "comma separated" on Labels two fields away. Spaces
+    // can't be policed the same way: real assignees are full names.
+    if (next.includes(",")) {
+      toast.error("One assignee only — bd keeps a single name here.");
+      setDraft(current);
+      return;
+    }
+    setDraft(next);
+    // A refused write leaves the bead — and therefore the remount key — alone,
+    // so the rollback has to be explicit.
+    if (next !== current) onChange(next, () => setDraft(current));
+  };
+
+  return (
+    <div className="flex flex-col gap-[5px]">
+      <span className={fieldLabel}>Assignee</span>
+      <div className="flex h-9 items-center gap-[7px] rounded-[9px] border border-border bg-[var(--surface-2)] px-[10px] focus-within:border-[var(--brand)]">
+        {/* Keyed off the saved assignee, not the draft, so the swatch always
+            reads as what the project thinks is true. */}
+        <span
+          className="flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full text-[9px] font-semibold text-white"
+          style={{ background: avatarColor(current) }}
+        >
+          {initials(current)}
+        </span>
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              // Blur so there is one commit path, and so the field visibly
+              // lets go once the name is in.
+              e.currentTarget.blur();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              setDraft(current);
+            }
+          }}
+          onBlur={commit}
+          list={listId}
+          placeholder="Unassigned"
+          aria-label="Assignee"
+          title="One name only — type to assign, empty the field to unassign"
+          className="min-w-0 flex-1 border-none bg-transparent text-[13px] text-[var(--text)] outline-none placeholder:text-[var(--text-3)]"
+        />
+        <datalist id={listId}>
+          {suggestions
+            .filter((s) => s !== current)
+            .map((s) => (
+              <option key={s} value={s} />
+            ))}
+        </datalist>
+      </div>
+    </div>
+  );
 }
 
 /**

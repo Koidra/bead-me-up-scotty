@@ -49,7 +49,6 @@ export function Board() {
 
   const matchFilters = React.useCallback(
     (b: Bead) => {
-      if (b.issue_type === "epic") return false;
       if (!showArchived && (b.labels ?? []).includes("archived")) return false;
       return matchesFilters(b, filters, humanAllowlist, index);
     },

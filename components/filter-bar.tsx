@@ -63,9 +63,12 @@ export function FilterBar({
           onToggle={(v) => set({ status: toggleStr(filters.status, v) })}
           onClear={() => set({ status: [] })}
         />
+        {/* Epic is offered like any other type, and ticking it is the only way
+            to get epic cards onto the Board and List — they stay hidden while
+            the facet is untouched (see matchesFilters). */}
         <MultiSelectFilter
           label="Type"
-          options={BEAD_TYPES.filter((t) => t !== "epic").map((t) => ({ value: t, label: typeLabel(t) }))}
+          options={BEAD_TYPES.map((t) => ({ value: t, label: typeLabel(t) }))}
           selected={filters.type}
           onToggle={(v) => set({ type: toggleStr(filters.type, v) })}
           onClear={() => set({ type: [] })}

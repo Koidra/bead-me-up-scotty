@@ -85,7 +85,6 @@ export function ListView() {
   const rows = React.useMemo(() => {
     return beads
       .filter((b) => {
-        if (b.issue_type === "epic") return false;
         if (!showArchived && (b.labels ?? []).includes("archived")) return false;
         return matchesFilters(b, filters, humanAllowlist, index);
       })

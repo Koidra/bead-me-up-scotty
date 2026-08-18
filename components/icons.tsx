@@ -58,7 +58,11 @@ export function Icon({
   );
 }
 
-/** Icon for a bead issue_type, falling back to the task glyph. */
+/** Icon for a bead issue_type, falling back to the task glyph. Epic has no
+ *  glyph of its own and reuses `target`, the one the epic chips and the Epics
+ *  tab already use — it would otherwise read as a task now that an epic can be
+ *  a card of its own. */
 export function typeIconName(t: string): IconName {
+  if (t === "epic") return "target";
   return (ICONS[t] ? t : "task") as IconName;
 }

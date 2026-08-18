@@ -59,13 +59,18 @@ export function epicValue(id: string): string {
 export const NO_EPIC = "no-epic";
 
 /**
- * The epic a bead belongs to, or null when it belongs to none. Any bead can be
- * a parent, not just an epic, so the epic is an ANCESTOR rather than necessarily
- * the direct parent: a subtask of a task under an epic still belongs to that
- * epic. The walk stops at the first epic, so a nested epic claims its own
- * subtree, and `seen` guards against a parent cycle in the data.
+ * The epic a bead belongs to, or null when it belongs to none. An epic belongs
+ * to ITSELF: an epic can now be a row of its own (Type = Epic), and someone who
+ * ticks Type = Epic and Epic = X means "X", not "whatever X happens to hang
+ * off". It also keeps the facet honest — no epic is ever "No epic".
+ *
+ * Otherwise the epic is an ANCESTOR rather than necessarily the direct parent —
+ * any bead can be a parent, not just an epic — so a subtask of a task under an
+ * epic still belongs to that epic. The walk stops at the first epic, so a nested
+ * epic claims its own subtree, and `seen` guards against a parent cycle.
  */
 export function epicOf(b: Bead, index: Map<string, Bead>): Bead | null {
+  if (b.issue_type === "epic") return b;
   const seen = new Set<string>([b.id]);
   for (let p = parentOf(b, index); p && !seen.has(p.id); p = parentOf(p, index)) {
     if (p.issue_type === "epic") return p;
@@ -75,11 +80,12 @@ export function epicOf(b: Bead, index: Map<string, Bead>): Bead | null {
 }
 
 /**
- * The epics that beads actually hang off, as filter options labelled by epic
- * title and sorted by it — with "No epic" first when any bead has none. Callers
- * pass ALL beads (not the filtered set), same as labelOptionsFrom. Epics
- * themselves are skipped: the Board and List never render them as rows, so an
- * epic's own membership is not something either view can filter on.
+ * The epics beads belong to, as filter options labelled by epic title and
+ * sorted by it — with "No epic" first when any bead has none. Callers pass ALL
+ * beads (not the filtered set), same as labelOptionsFrom. Epics count as their
+ * own (see epicOf), so every epic is offered here whether or not anything hangs
+ * off it: an epic can be a row now, so picking a childless one still selects
+ * something, and the options no longer depend on which types are on screen.
  */
 export function epicOptionsFrom(
   beads: Bead[],
@@ -88,7 +94,6 @@ export function epicOptionsFrom(
   const titles = new Map<string, string>();
   let hasNone = false;
   for (const b of beads) {
-    if (b.issue_type === "epic") continue;
     const e = epicOf(b, index);
     if (e) titles.set(e.id, e.title);
     else hasNone = true;
@@ -123,6 +128,11 @@ export function matchesFilters(
   humanAllowlist: string[],
   index: Map<string, Bead>,
 ): boolean {
+  // Epics are rows only when the Type facet explicitly asks for them: they have
+  // their own screen, they are containers rather than work, and every existing
+  // board would otherwise gain cards it never had. So an EMPTY Type facet means
+  // "every type except epic" — the one facet whose "no constraint" isn't total.
+  if (b.issue_type === "epic" && !f.type.includes("epic")) return false;
   if (f.status.length && !f.status.includes(b.status)) return false;
   if (f.type.length && !f.type.includes(b.issue_type)) return false;
   if (f.priority.length && !f.priority.includes(b.priority)) return false;

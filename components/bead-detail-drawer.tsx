@@ -60,6 +60,17 @@ const detailContentClass =
  * un-archived by deleting a chip that looks cosmetic.
  */
 const ARCHIVED_LABEL = "archived";
+/**
+ * Everyone else working on a bead, kept as `collaborator:<name>` labels.
+ * `assignee` is a single column that also carries bd's claim (`--claim`,
+ * `--if-assignee`, the leases table), so it has to stay one DRI; labels are a
+ * real join table, which makes them the only multi-valued field bd offers. The
+ * prefix never reaches the screen — nobody should have to read `collaborator:`
+ * to see who is on a bead.
+ */
+const COLLABORATOR_PREFIX = "collaborator:";
+const isCollaboratorLabel = (label: string) => label.startsWith(COLLABORATOR_PREFIX);
+const collaboratorName = (label: string) => label.slice(COLLABORATOR_PREFIX.length);
 /** Chip styling shared with the list rows (list-view.tsx) so labels read alike. */
 const labelChipClass =
   "inline-flex items-center gap-[5px] rounded-md border border-border bg-[var(--surface-2)] px-[6px] py-[2px] font-mono text-[10.5px] text-[var(--text-3)]";
@@ -241,18 +252,26 @@ function DrawerBody({
 
   // Every label already in use across the project, offered as datalist
   // suggestions so labels converge instead of sprouting near-duplicates.
-  // `archived` is state (see LabelsField), not a tag, so it never appears.
+  // `archived` is state (see LabelsField) and `collaborator:` labels are people
+  // (see CollaboratorsField), not tags, so neither appears.
   const labelSuggestions = React.useMemo(() => {
     const s = new Set<string>();
-    for (const b of beads) for (const l of b.labels ?? []) if (l !== ARCHIVED_LABEL) s.add(l);
+    for (const b of beads)
+      for (const l of b.labels ?? [])
+        if (l !== ARCHIVED_LABEL && !isCollaboratorLabel(l)) s.add(l);
     return [...s].sort();
   }, [beads]);
 
-  // Names already assigned somewhere in the project, with the local actor first
-  // so "assign it to me" stays one keystroke — the same set the create dialog
-  // offers. bd takes any string, so these are suggestions, not the vocabulary.
-  const assigneeSuggestions = React.useMemo(() => {
-    const names = new Set(beads.map((b) => b.assignee).filter(Boolean) as string[]);
+  // Everyone the project already knows about — assignees plus anyone credited as
+  // a collaborator — with the local actor first so "that’s me" stays one
+  // keystroke. bd takes any string for either, so this is a shortcut, not a
+  // roster.
+  const peopleSuggestions = React.useMemo(() => {
+    const names = new Set<string>();
+    for (const b of beads) {
+      if (b.assignee) names.add(b.assignee);
+      for (const l of b.labels ?? []) if (isCollaboratorLabel(l)) names.add(collaboratorName(l));
+    }
     names.delete(actor);
     return [actor, ...[...names].sort()];
   }, [actor, beads]);
@@ -386,7 +405,7 @@ function DrawerBody({
           <AssigneeField
             key={bead.assignee ?? ""}
             bead={bead}
-            suggestions={assigneeSuggestions}
+            suggestions={peopleSuggestions}
             onChange={(assignee, onError) =>
               update.mutate({ id: bead.id, patch: { assignee } }, { onError })
             }
@@ -427,6 +446,12 @@ function DrawerBody({
             )}
           </div>
         </div>
+
+        <CollaboratorsField
+          bead={bead}
+          suggestions={peopleSuggestions}
+          onChange={(labels) => update.mutate({ id: bead.id, patch: { labels } })}
+        />
 
         <LabelsField
           bead={bead}
@@ -1065,9 +1090,113 @@ function AssigneeField({
 }
 
 /**
+ * The people on a bead besides the assignee, stored as `collaborator:<name>`
+ * labels and shown as avatars — the prefix is an implementation detail.
+ *
+ * Like LabelsField this sends the FULL desired label set, so every label that
+ * isn't a collaborator (`archived`, `web`, …) is carried through untouched;
+ * sending only the people would delete the rest.
+ */
+function CollaboratorsField({
+  bead,
+  suggestions,
+  onChange,
+}: {
+  bead: Bead;
+  suggestions: string[];
+  onChange: (labels: string[]) => void;
+}) {
+  const [draft, setDraft] = React.useState("");
+  const listId = `collaborators-${bead.id}`;
+  const all = bead.labels ?? [];
+  const names = all.filter(isCollaboratorLabel).map(collaboratorName);
+  const otherLabels = all.filter((l) => !isCollaboratorLabel(l));
+
+  const commitNames = (next: string[]) =>
+    onChange([...otherLabels, ...next.map((n) => COLLABORATOR_PREFIX + n)]);
+
+  const add = () => {
+    const v = draft.trim();
+    // A comma survives neither leg of the round trip: `bd update --set-labels`
+    // is comma-joined, so "Tran, Sinh" lands as `collaborator:Tran` plus a
+    // stray ` Sinh` label. Spaces are fine — real names have them.
+    if (v.includes(",")) {
+      toast.error("A collaborator's name can't contain a comma.");
+      return;
+    }
+    setDraft("");
+    if (!v || names.includes(v)) return;
+    commitNames([...names, v]);
+  };
+
+  return (
+    <div className="mb-4 flex flex-col gap-[5px]">
+      <span className={fieldLabel}>Collaborators</span>
+      <div className="flex flex-wrap items-center gap-[6px] rounded-[9px] border border-border bg-[var(--surface-2)] p-[7px_9px]">
+        {names.map((n) => (
+          <span
+            key={n}
+            className="inline-flex items-center gap-[5px] rounded-full border border-border bg-[var(--surface)] py-[2px] pl-[2px] pr-[7px] text-[12px] text-[var(--text-2)]"
+          >
+            <span
+              className="flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full text-[9px] font-semibold text-white"
+              style={{ background: avatarColor(n) }}
+            >
+              {initials(n)}
+            </span>
+            {n}
+            <button
+              type="button"
+              onClick={() => commitNames(names.filter((x) => x !== n))}
+              title={`Remove ${n} from this bead`}
+              aria-label={`Remove collaborator ${n}`}
+              className="text-[var(--text-3)] hover:text-[var(--danger,#ef4444)]"
+            >
+              <Icon name="x" size={11} />
+            </button>
+          </span>
+        ))}
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              setDraft("");
+            } else if (e.key === "Backspace" && !draft && names.length) {
+              // Backspace on an empty input drops the last person, as in the
+              // label editor below.
+              commitNames(names.slice(0, -1));
+            }
+          }}
+          onBlur={add}
+          list={listId}
+          placeholder={names.length ? "Add someone…" : "Nobody else — add someone…"}
+          aria-label="Add collaborator"
+          className="min-w-[130px] flex-1 border-none bg-transparent text-[12.5px] text-[var(--text)] outline-none placeholder:text-[var(--text-3)]"
+        />
+        <datalist id={listId}>
+          {suggestions
+            .filter((s) => !names.includes(s) && s !== bead.assignee)
+            .map((s) => (
+              <option key={s} value={s} />
+            ))}
+        </datalist>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Add/remove labels on a bead. Every mutation sends the FULL desired set (the
- * update path is replace-all), and `archived` — if present — is always carried
- * through untouched so editing labels can never un-archive a bead.
+ * update path is replace-all), so the labels this editor doesn't own —
+ * `archived` and the `collaborator:` people — are always carried through
+ * untouched: editing labels can neither un-archive a bead nor drop someone off
+ * it. Both are still accounted for on screen, as chips nobody can pull out,
+ * because a label editor that quietly omits labels is worse than a busy one.
  */
 function LabelsField({
   bead,
@@ -1082,17 +1211,19 @@ function LabelsField({
   const listId = `labels-${bead.id}`;
   const all = bead.labels ?? [];
   const isArchived = all.includes(ARCHIVED_LABEL);
-  const visible = all.filter((l) => l !== ARCHIVED_LABEL);
+  const collaborators = all.filter(isCollaboratorLabel).map(collaboratorName);
+  const carried = all.filter((l) => l === ARCHIVED_LABEL || isCollaboratorLabel(l));
+  const visible = all.filter((l) => !carried.includes(l));
 
-  // Re-attach `archived` to whatever the user ended up with before sending.
-  const commitVisible = (next: string[]) =>
-    onChange(isArchived ? [...next, ARCHIVED_LABEL] : next);
+  // Re-attach what this editor doesn't own before sending.
+  const commitVisible = (next: string[]) => onChange([...next, ...carried]);
 
   const add = () => {
     const v = draft.trim().replace(/,+$/, "").trim();
     setDraft("");
-    // Ignore empties, duplicates, and any attempt to hand-type the archive flag.
-    if (!v || v === ARCHIVED_LABEL || visible.includes(v)) return;
+    // Ignore empties, duplicates, and any attempt to hand-type the archive flag
+    // or a person — both have their own control.
+    if (!v || v === ARCHIVED_LABEL || isCollaboratorLabel(v) || visible.includes(v)) return;
     commitVisible([...visible, v]);
   };
 
@@ -1123,6 +1254,15 @@ function LabelsField({
             {ARCHIVED_LABEL}
           </span>
         )}
+        {collaborators.length > 0 && (
+          <span
+            className={`${labelChipClass} opacity-70`}
+            title={`${collaborators.join(", ")} — edit in the Collaborators field above.`}
+          >
+            <Icon name="user" size={10} />
+            {collaborators.length} collaborator{collaborators.length > 1 ? "s" : ""}
+          </span>
+        )}
         <input
           value={draft}
           onChange={(e) => {
@@ -1130,7 +1270,7 @@ function LabelsField({
             if (e.target.value.includes(",")) {
               const [head, ...rest] = e.target.value.split(",");
               const v = head.trim();
-              if (v && v !== ARCHIVED_LABEL && !visible.includes(v)) {
+              if (v && v !== ARCHIVED_LABEL && !isCollaboratorLabel(v) && !visible.includes(v)) {
                 commitVisible([...visible, v]);
               }
               setDraft(rest.join(",").trim());

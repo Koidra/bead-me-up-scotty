@@ -238,14 +238,53 @@ export function childrenOf(epicId: string, beads: Bead[]): Bead[] {
   );
 }
 
-export function epicProgress(
-  epicId: string,
-  beads: Bead[],
-): { closed: number; total: number; pct: number } {
-  const kids = childrenOf(epicId, beads);
-  const total = kids.length;
-  const closed = kids.filter((k) => k.status === "closed").length;
-  return { closed, total, pct: total ? Math.round((closed / total) * 100) : 0 };
+export interface ChildProgress {
+  closed: number;
+  total: number;
+  pct: number;
+}
+
+/** A parent with nothing under it yet: 0 of 0, and 0% rather than NaN. */
+export const NO_PROGRESS: ChildProgress = { closed: 0, total: 0, pct: 0 };
+
+/**
+ * Closed-vs-total children per parent id, built in ONE pass over all beads —
+ * the progress counterpart to childrenCountMap. A view that renders many
+ * parents at once (the Epics screen, and the Board once Type = Epic puts epic
+ * cards on it) builds this once rather than calling epicProgress() per card,
+ * which is a childrenOf() scan each and O(n^2) on a board that is all epics.
+ *
+ * A bead counts once per parent even if the data carries the edge twice, so
+ * `total` always matches the children childrenOf() hands back.
+ */
+export function childProgressMap(beads: Bead[]): Map<string, ChildProgress> {
+  const counts = new Map<string, { closed: number; total: number }>();
+  for (const b of beads) {
+    const parents = new Set<string>();
+    for (const d of b.dependencies ?? []) {
+      if (d.type === "parent-child") parents.add(d.depends_on_id);
+    }
+    for (const p of parents) {
+      const c = counts.get(p) ?? { closed: 0, total: 0 };
+      c.total++;
+      if (b.status === "closed") c.closed++;
+      counts.set(p, c);
+    }
+  }
+  const m = new Map<string, ChildProgress>();
+  for (const [id, { closed, total }] of counts) {
+    m.set(id, { closed, total, pct: total ? Math.round((closed / total) * 100) : 0 });
+  }
+  return m;
+}
+
+/**
+ * One parent's progress — the single-parent form of childProgressMap, so what
+ * "% done" means is decided in exactly one place. Callers with more than a
+ * couple of parents on screen should build the map once instead.
+ */
+export function epicProgress(epicId: string, beads: Bead[]): ChildProgress {
+  return childProgressMap(beads).get(epicId) ?? NO_PROGRESS;
 }
 
 // ---- relative time ----

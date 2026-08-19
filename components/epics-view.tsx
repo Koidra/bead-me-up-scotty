@@ -12,7 +12,8 @@ import {
   initials,
   childrenOf,
   collaboratorsOf,
-  epicProgress,
+  childProgressMap,
+  NO_PROGRESS,
 } from "@/lib/beads-view";
 import type { Bead } from "@/lib/schema";
 
@@ -120,6 +121,9 @@ export function EpicsView({ focusEpic }: { focusEpic?: { id: string; nonce: numb
   const epics = allEpics.filter(
     (e) => !hideClosed || e.status !== "closed" || e.id === focusEpic?.id,
   );
+  // One pass over all beads, not an epicProgress() scan per epic — this screen
+  // renders every epic in the project, and the Board reads the same map.
+  const progress = React.useMemo(() => childProgressMap(beads), [beads]);
 
   // On a focus request, scroll the target epic into view and flash it. DOM-only
   // side effects (no setState) keep this a clean effect; the nonce re-triggers it
@@ -166,7 +170,7 @@ export function EpicsView({ focusEpic }: { focusEpic?: { id: string; nonce: numb
       <div className="bd-scroll min-h-0 flex-1 overflow-y-auto p-[20px_22px]">
         <div className="mx-auto flex max-w-[880px] flex-col gap-[14px]">
           {epics.map((e) => {
-            const { closed, total, pct } = epicProgress(e.id, beads);
+            const { closed, total, pct } = progress.get(e.id) ?? NO_PROGRESS;
             const kids = childrenOf(e.id, beads)
               .filter((k) => !hideClosed || k.status !== "closed")
               .sort(

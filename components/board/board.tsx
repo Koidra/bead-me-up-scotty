@@ -14,7 +14,7 @@ import { useApp } from "@/components/app-context";
 import { useSetStatus } from "@/hooks/use-beads";
 import { useOrder, useSetOrder } from "@/hooks/use-order";
 import { useBoardPrefs } from "@/hooks/use-board-prefs";
-import { isBlocked, childrenCountMap } from "@/lib/beads-view";
+import { isBlocked, childrenCountMap, childProgressMap } from "@/lib/beads-view";
 import { FilterBar } from "@/components/filter-bar";
 import {
   matchesFilters,
@@ -45,6 +45,10 @@ export function Board() {
   // One pass over all beads, not childrenOf() per card — that would be O(n^2)
   // on a large board.
   const childCounts = React.useMemo(() => childrenCountMap(beads), [beads]);
+  // Same one pass, for the progress epic cards carry (Type = Epic). Counted off
+  // ALL beads, not the filtered set, so a card reads the same % the Epics screen
+  // does no matter what the facets hide.
+  const progress = React.useMemo(() => childProgressMap(beads), [beads]);
   // Time-window filter for the Done column: null = all, else "closed within N days" (bead nad).
   const [doneWindow, setDoneWindow] = React.useState<number | null>(null);
   // Mount-time "now" for the window cutoff — captured once (day-granular, so it
@@ -172,6 +176,7 @@ export function Board() {
                   col={col}
                   cards={cards}
                   childCounts={childCounts}
+                  progress={progress}
                   control={
                     col.id === "done" ? (
                       <select

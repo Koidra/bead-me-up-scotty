@@ -35,6 +35,9 @@ import {
   typeLabel,
   avatarColor,
   initials,
+  COLLABORATOR_PREFIX,
+  isCollaboratorLabel,
+  collaboratorName,
   parentOf,
   childrenOf,
   epicProgress,
@@ -60,17 +63,6 @@ const detailContentClass =
  * un-archived by deleting a chip that looks cosmetic.
  */
 const ARCHIVED_LABEL = "archived";
-/**
- * Everyone else working on a bead, kept as `collaborator:<name>` labels.
- * `assignee` is a single column that also carries bd's claim (`--claim`,
- * `--if-assignee`, the leases table), so it has to stay one DRI; labels are a
- * real join table, which makes them the only multi-valued field bd offers. The
- * prefix never reaches the screen — nobody should have to read `collaborator:`
- * to see who is on a bead.
- */
-const COLLABORATOR_PREFIX = "collaborator:";
-const isCollaboratorLabel = (label: string) => label.startsWith(COLLABORATOR_PREFIX);
-const collaboratorName = (label: string) => label.slice(COLLABORATOR_PREFIX.length);
 /** Chip styling shared with the list rows (list-view.tsx) so labels read alike. */
 const labelChipClass =
   "inline-flex items-center gap-[5px] rounded-md border border-border bg-[var(--surface-2)] px-[6px] py-[2px] font-mono text-[10.5px] text-[var(--text-3)]";

@@ -154,6 +154,33 @@ export function initials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
+/**
+ * Everyone else working on a bead, kept as `collaborator:<name>` labels.
+ * `assignee` is a single column that also carries bd's claim (`--claim`,
+ * `--if-assignee`, the leases table), so it has to stay one DRI; labels are a
+ * real join table, which makes them the only multi-valued field bd offers. The
+ * prefix never reaches the screen — nobody should have to read `collaborator:`
+ * to see who is on a bead.
+ */
+export const COLLABORATOR_PREFIX = "collaborator:";
+export const isCollaboratorLabel = (label: string) => label.startsWith(COLLABORATOR_PREFIX);
+export const collaboratorName = (label: string) => label.slice(COLLABORATOR_PREFIX.length);
+
+/** The people credited on a bead besides its assignee, in label order. */
+export function collaboratorsOf(b: Bead): string[] {
+  return (b.labels ?? []).filter(isCollaboratorLabel).map(collaboratorName);
+}
+
+/**
+ * The labels worth showing as chips. `archived` is state — the views hide on it
+ * and the archive button writes it — and `collaborator:` labels are people, so
+ * neither is a tag anyone should have to read raw; the drawer already keeps both
+ * out of its label editor and shows them as their own controls.
+ */
+export function displayLabels(b: Bead): string[] {
+  return (b.labels ?? []).filter((l) => l !== "archived" && !isCollaboratorLabel(l));
+}
+
 // ---- relationship helpers (need the full bead set for lookups) ----
 
 export function makeIndex(beads: Bead[]): Map<string, Bead> {
@@ -221,14 +248,53 @@ export function childrenOf(epicId: string, beads: Bead[]): Bead[] {
   );
 }
 
-export function epicProgress(
-  epicId: string,
-  beads: Bead[],
-): { closed: number; total: number; pct: number } {
-  const kids = childrenOf(epicId, beads);
-  const total = kids.length;
-  const closed = kids.filter((k) => k.status === "closed").length;
-  return { closed, total, pct: total ? Math.round((closed / total) * 100) : 0 };
+export interface ChildProgress {
+  closed: number;
+  total: number;
+  pct: number;
+}
+
+/** A parent with nothing under it yet: 0 of 0, and 0% rather than NaN. */
+export const NO_PROGRESS: ChildProgress = { closed: 0, total: 0, pct: 0 };
+
+/**
+ * Closed-vs-total children per parent id, built in ONE pass over all beads —
+ * the progress counterpart to childrenCountMap. A view that renders many
+ * parents at once (the Epics screen, and the Board once Type = Epic puts epic
+ * cards on it) builds this once rather than calling epicProgress() per card,
+ * which is a childrenOf() scan each and O(n^2) on a board that is all epics.
+ *
+ * A bead counts once per parent even if the data carries the edge twice, so
+ * `total` always matches the children childrenOf() hands back.
+ */
+export function childProgressMap(beads: Bead[]): Map<string, ChildProgress> {
+  const counts = new Map<string, { closed: number; total: number }>();
+  for (const b of beads) {
+    const parents = new Set<string>();
+    for (const d of b.dependencies ?? []) {
+      if (d.type === "parent-child") parents.add(d.depends_on_id);
+    }
+    for (const p of parents) {
+      const c = counts.get(p) ?? { closed: 0, total: 0 };
+      c.total++;
+      if (b.status === "closed") c.closed++;
+      counts.set(p, c);
+    }
+  }
+  const m = new Map<string, ChildProgress>();
+  for (const [id, { closed, total }] of counts) {
+    m.set(id, { closed, total, pct: total ? Math.round((closed / total) * 100) : 0 });
+  }
+  return m;
+}
+
+/**
+ * One parent's progress — the single-parent form of childProgressMap, so what
+ * "% done" means is decided in exactly one place. Callers with more than a
+ * couple of parents on screen should build the map once instead.
+ */
+export function epicProgress(epicId: string, beads: Bead[]): ChildProgress {
+  return childProgressMap(beads).get(epicId) ?? NO_PROGRESS;
 }
 
 // ---- relative time ----

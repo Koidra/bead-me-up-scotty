@@ -19,9 +19,21 @@ import {
   isBlocked,
   parentOf,
   checklistProgress,
+  displayLabels,
+  NO_PROGRESS,
+  type ChildProgress,
 } from "@/lib/beads-view";
 
-export function BeadCard({ bead, childCount = 0 }: { bead: Bead; childCount?: number }) {
+export function BeadCard({
+  bead,
+  childCount = 0,
+  progress,
+}: {
+  bead: Bead;
+  childCount?: number;
+  /** Children closed/total, counted once by the board (childProgressMap). */
+  progress?: ChildProgress;
+}) {
   const { index, humanAllowlist, openDetail } = useApp();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: bead.id,
@@ -30,10 +42,16 @@ export function BeadCard({ bead, childCount = 0 }: { bead: Bead; childCount?: nu
   const o = beadOrigin(bead, humanAllowlist);
   const parent = parentOf(bead, index);
   const blocked = isBlocked(bead, index);
-  const visLabels = (bead.labels ?? []).filter((l) => l !== "archived").slice(0, 2);
+  const visLabels = displayLabels(bead).slice(0, 2);
   const depCount = (bead.dependencies ?? []).filter((d) => d.type !== "parent-child").length;
   const commentCount = (bead.comments ?? []).length;
   const checklist = checklistProgress(bead.description);
+  // An epic is a container, so "how far along" is the number that matters on it
+  // — the same readout the Epics screen leads with, off the same count. Every
+  // other type stays as it was: their children are the subtask badge below, and
+  // a bar on each of them would be noise on a column of cards. An epic nobody
+  // has filed anything under still reads 0%, as it does on the Epics screen.
+  const epicBar = bead.issue_type === "epic" ? progress ?? NO_PROGRESS : null;
 
   return (
     <article
@@ -87,6 +105,28 @@ export function BeadCard({ bead, childCount = 0 }: { bead: Bead; childCount?: nu
           </span>
         ))}
       </div>
+
+      {epicBar && (
+        <div className="flex flex-col gap-[5px]">
+          <div className="flex items-baseline gap-[6px]">
+            <span className="font-mono text-[13.5px] font-[650] tracking-[-.02em]">
+              {epicBar.pct}%
+            </span>
+            <span className="text-[11px] text-[var(--text-3)]">
+              {epicBar.closed}/{epicBar.total} done
+            </span>
+          </div>
+          <div className="h-[6px] w-full overflow-hidden rounded-full bg-[var(--surface-3)]">
+            <div
+              className="h-full rounded-full transition-[width]"
+              style={{
+                width: `${epicBar.pct}%`,
+                background: epicBar.pct === 100 ? "#16a34a" : "var(--brand)",
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="mt-px flex items-center gap-[10px] border-t border-border pt-[9px]">
         <span className="inline-flex min-w-0 items-center gap-[6px]">

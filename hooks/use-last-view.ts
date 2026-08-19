@@ -1,26 +1,15 @@
 "use client";
 import * as React from "react";
-import type { View } from "@/components/app-context";
-
-const VIEWS: View[] = [
-  "board",
-  "list",
-  "epics",
-  "graph",
-  "insights",
-  "activity",
-  "needsyou",
-  "achievements",
-  "publish",
-  "settings",
-];
-const isView = (v: string | null): v is View => v != null && (VIEWS as string[]).includes(v);
+import { isView, type View } from "@/lib/views";
 const keyFor = (projectId: string) => `bmus.view.${projectId}`;
 const EVT = "bmus:view";
 
 /**
- * Remembers the active view per project in localStorage (bead 433). Uses
- * useSyncExternalStore so it's SSR-safe: the server and the first client render
+ * Remembers the active view per project in localStorage (bead 433). The URL is
+ * authoritative for the view now; this is the FALLBACK the bare /p/<project>
+ * link resolves against, and it keeps following whichever view the URL selects.
+ *
+ * Uses useSyncExternalStore so it's SSR-safe: the server and the first client render
  * both return "board" (matching the server HTML), then it syncs to the stored
  * value — no setState-in-effect and no hydration mismatch. Falls back to "board"
  * for unknown/removed view ids.

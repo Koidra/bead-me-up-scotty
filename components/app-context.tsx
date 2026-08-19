@@ -4,17 +4,10 @@ import { type BeadType } from "@/lib/schema";
 import type { Bead } from "@/lib/schema";
 import type { Meta } from "@/lib/api-client";
 
-export type View =
-  | "board"
-  | "list"
-  | "epics"
-  | "graph"
-  | "insights"
-  | "activity"
-  | "needsyou"
-  | "achievements"
-  | "publish"
-  | "settings";
+// The view list moved to lib/views.ts when views became URL path segments — the
+// router has to recognise one on the server, which a "use client" module can't
+// do. Re-exported here so the components that already import it don't churn.
+export type { View } from "@/lib/views";
 
 interface AppContextValue {
   projectId: string;

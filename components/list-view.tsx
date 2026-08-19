@@ -22,13 +22,12 @@ import { CopyableId } from "@/components/copyable-id";
 import { FilterBar } from "@/components/filter-bar";
 import { useOrder, useSetOrder } from "@/hooks/use-order";
 import { useSetStatus } from "@/hooks/use-beads";
+import { useUrlFilters } from "@/hooks/use-url-filters";
 import {
   matchesFilters,
-  emptyFilters,
   labelOptionsFrom,
   assigneeOptionsFrom,
   epicOptionsFrom,
-  type Filters,
 } from "@/lib/filters";
 import { BOARD_COLUMNS, COLUMN_ORDER, colOf } from "@/lib/board-columns";
 import { beadOrigin, originTitle } from "@/lib/attribution";
@@ -67,8 +66,9 @@ export function ListView() {
   const setOrder = useSetOrder(projectId);
   const orders = React.useMemo(() => orderData?.orders ?? {}, [orderData]);
 
-  const [filters, setFilters] = React.useState<Filters>(emptyFilters);
-  const [showArchived, setShowArchived] = React.useState(false);
+  // Filters live in the URL, so a filtered list is a link — the same parameters
+  // the Board reads, so switching views carries them across.
+  const { filters, setFilters, showArchived, setShowArchived, clearFilters } = useUrlFilters();
   // Derived from ALL beads (not the filtered set) so selecting one label
   // doesn't make the remaining options vanish from the dropdown.
   const labelOptions = React.useMemo(() => labelOptionsFrom(beads), [beads]);
@@ -166,11 +166,13 @@ export function ListView() {
         <FilterBar
           filters={filters}
           onChange={setFilters}
+          onClearAll={clearFilters}
           labelOptions={labelOptions}
           assigneeOptions={assigneeOptions}
           epicOptions={epicOptions}
           showArchived={showArchived}
           onShowArchived={setShowArchived}
+          ready={beads.length > 0}
         />
 
         <button

@@ -160,9 +160,11 @@ function DrawerBody({
   const createGate = useCreateGate();
 
   // Same clipboard handling as CopyableId, but for the bead's permalink URL —
-  // the /p/<project>/<bead> route this drawer is addressable at.
+  // which is simply the address bar: the AppShell keeps it in sync with the view,
+  // the filters AND the open bead, so copying it hands someone the screen you are
+  // actually looking at rather than a bare bead on whatever view they last used.
   const copyLink = () => {
-    const url = `${window.location.origin}/p/${encodeURIComponent(projectId)}/${encodeURIComponent(bead.id)}`;
+    const url = window.location.href;
     if (!navigator.clipboard) {
       toast.error("Clipboard unavailable in this context");
       return;

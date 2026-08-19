@@ -1,4 +1,5 @@
 import type { Bead } from "./schema";
+import { BEAD_STATUSES, BEAD_TYPES, PRIORITIES } from "./schema";
 import { beadOrigin } from "./attribution";
 import { parentOf } from "./beads-view";
 
@@ -28,6 +29,131 @@ export const emptyFilters: Filters = {
   epic: [],
   search: "",
 };
+
+/**
+ * URL ↔ Filters. Filters are BOOKMARKABLE: a link has to reproduce the view it
+ * was copied from, so every facet gets a query parameter.
+ *
+ * REPEATED params (`type=epic&type=bug`) rather than a comma-joined list: three
+ * of these facets carry values we do not control — labels, assignees and epic
+ * ids are data, so a comma or a space inside one is only a matter of time
+ * ("Sinh Tran" already has the space) — and repeating the key needs no escaping
+ * convention layered on top of the one URLSearchParams already applies.
+ *
+ * Epic values stay TAGGED (`epic:<id>`, hence the `%3A` in the URL) exactly as
+ * the facet holds them. Stripping the tag for a prettier link would put real
+ * epic ids back in the same value space as the untagged "no-epic" sentinel,
+ * which is precisely the collision epicValue() exists to prevent.
+ */
+const FACET_PARAMS = [
+  "status",
+  "type",
+  "priority",
+  "origin",
+  "label",
+  "assignee",
+  "epic",
+  "q",
+] as const;
+
+const ORIGINS = ["human", "agent"] as const;
+
+/** The read side of URLSearchParams — Next's ReadonlyURLSearchParams satisfies it too. */
+type ParamsReader = Pick<URLSearchParams, "get" | "getAll">;
+
+const distinct = (p: ParamsReader, name: string) => [...new Set(p.getAll(name).filter(Boolean))];
+
+/**
+ * Parse the shared Board/List filters out of a URL.
+ *
+ * Values of the four ENUM facets are validated away when they name something
+ * that no longer exists, because a stale `status=wontfix` would otherwise match
+ * no bead and leave a link's recipient staring at an empty board. The three
+ * DATA-derived facets (labels, assignee, epic) can't be checked here — their
+ * options come from beads that haven't loaded yet at parse time — so they are
+ * taken at face value and reported by staleFilterValues() once data is in.
+ */
+export function filtersFromParams(params: ParamsReader): Filters {
+  const oneOf = <T extends string>(name: string, allowed: readonly T[]): T[] =>
+    distinct(params, name).filter((v): v is T => (allowed as readonly string[]).includes(v));
+  return {
+    status: oneOf("status", BEAD_STATUSES),
+    type: oneOf("type", BEAD_TYPES),
+    priority: distinct(params, "priority")
+      .map(Number)
+      .filter((n) => (PRIORITIES as readonly number[]).includes(n)),
+    origin: oneOf("origin", ORIGINS),
+    labels: distinct(params, "label"),
+    assignee: distinct(params, "assignee"),
+    epic: distinct(params, "epic"),
+    // Raw, NOT trimmed: the input is driven by this value, so trimming here
+    // would eat the space the moment you typed it and make "foo bar" untypable.
+    search: params.get("q") ?? "",
+  };
+}
+
+/** Write the filters into `params`, leaving every parameter we don't own alone. */
+export function writeFiltersToParams(params: URLSearchParams, f: Filters): void {
+  for (const name of FACET_PARAMS) params.delete(name);
+  for (const v of f.status) params.append("status", v);
+  for (const v of f.type) params.append("type", v);
+  for (const v of f.priority) params.append("priority", String(v));
+  for (const v of f.origin) params.append("origin", v);
+  for (const v of f.labels) params.append("label", v);
+  for (const v of f.assignee) params.append("assignee", v);
+  for (const v of f.epic) params.append("epic", v);
+  if (f.search) params.set("q", f.search);
+}
+
+/** True when only the free-text search differs — see useUrlFilters for why. */
+export function sameFacets(a: Filters, b: Filters): boolean {
+  const key = (f: Filters) =>
+    [f.status, f.type, f.priority, f.origin, f.labels, f.assignee, f.epic]
+      .map((vs) => vs.join("\u0000"))
+      .join("\u0001");
+  return key(a) === key(b);
+}
+
+/** Selected values of the data-derived facets that this project no longer offers. */
+export interface StaleValues {
+  labels: string[];
+  assignee: string[];
+  epic: string[];
+}
+
+/**
+ * A shared link outlives the data it points at: the epic it filtered on can be
+ * closed and the assignee can leave. Rather than silently showing an empty
+ * board, the FilterBar names the values that no longer exist and offers to drop
+ * them — so a stale link degrades into an explained one, not a blank screen.
+ * Callers must wait for beads to load; before that EVERY value looks stale.
+ */
+export function staleFilterValues(f: Filters, available: StaleValues): StaleValues {
+  const missing = (sel: string[], opts: string[]) => {
+    const known = new Set(opts);
+    return sel.filter((v) => !known.has(v));
+  };
+  return {
+    labels: missing(f.labels, available.labels),
+    assignee: missing(f.assignee, available.assignee),
+    epic: missing(f.epic, available.epic),
+  };
+}
+
+export function staleCount(s: StaleValues): number {
+  return s.labels.length + s.assignee.length + s.epic.length;
+}
+
+/** The same filters with every stale value removed. */
+export function withoutStale(f: Filters, s: StaleValues): Filters {
+  const drop = (sel: string[], gone: string[]) => sel.filter((v) => !gone.includes(v));
+  return {
+    ...f,
+    labels: drop(f.labels, s.labels),
+    assignee: drop(f.assignee, s.assignee),
+    epic: drop(f.epic, s.epic),
+  };
+}
 
 /**
  * Sentinel facet value for beads with no assignee, so "Unassigned" is

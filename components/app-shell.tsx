@@ -3,12 +3,15 @@ import * as React from "react";
 import { toast } from "sonner";
 import { type BeadType } from "@/lib/schema";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useBeads } from "@/hooks/use-beads";
 import { useBeadsStream } from "@/hooks/use-beads-stream";
 import { useLastView } from "@/hooks/use-last-view";
+import { useUrlState } from "@/hooks/use-url-state";
 import { useTheme } from "@/components/theme-provider";
 import { makeIndex } from "@/lib/beads-view";
 import { AppProvider } from "@/components/app-context";
+import { isView, type View } from "@/lib/views";
 import { Sidebar } from "@/components/sidebar";
 import { Board } from "@/components/board/board";
 import { ListView } from "@/components/list-view";
@@ -25,22 +28,59 @@ import { CreateBeadModal } from "@/components/create-bead-modal";
 import { CommandPalette } from "@/components/command-palette";
 import { NotificationWatcher } from "@/components/notification-watcher";
 
-export function AppShell({
-  projectId,
-  initialBeadId,
-}: {
-  projectId: string;
-  /** Deep link (/p/<project>/<bead>): open with this bead's drawer showing. */
-  initialBeadId?: string;
-}) {
-  const [view, setView] = useLastView(projectId);
+export function AppShell({ projectId }: { projectId: string }) {
+  const [lastView, rememberView] = useLastView(projectId);
+  const pathname = usePathname();
+  const { searchParams, updateLocation } = useUrlState();
   const { toggle: toggleTheme } = useTheme();
+
+  // THE URL IS THE STATE. Everything on screen that someone might want to send
+  // to a colleague lives in the address bar:
+  //
+  //   /p/<project>/<view>?<filters>&bead=<id>
+  //
+  // The path segment is a view name or — for the original permalink form, still
+  // honoured — a bead id (see app/p/[projectId]/[segment]/page.tsx). The open
+  // bead travels as a QUERY parameter in the canonical form so that it can ride
+  // along with a view and its filters; a path can only name one of the two.
+  const projectPath = `/p/${encodeURIComponent(projectId)}`;
+  const segment = pathname.startsWith(`${projectPath}/`)
+    ? decodeURIComponent(pathname.slice(projectPath.length + 1).split("/")[0])
+    : null;
+  const pathView = isView(segment) ? segment : null;
+  // A bare /p/<project>, and a bead permalink, name no view — they resolve
+  // against the per-project memory and get normalized by the effect below.
+  const view = pathView ?? lastView;
+  const beadParam = searchParams.get("bead");
+
+  const setView = React.useCallback(
+    (v: View) => {
+      rememberView(v);
+      // PUSH: switching screens is a navigation, so Back returns to the
+      // previous one. The query string rides along, so filters survive a
+      // Board→List hop (they are the same parameters — see useUrlFilters).
+      updateLocation((url) => {
+        url.pathname = `${projectPath}/${v}`;
+      });
+    },
+    [projectPath, rememberView, updateLocation],
+  );
+
+  // The path selects the view, including when back/forward or a shared link
+  // does the selecting — so the memory follows the URL, not the other way
+  // round, and the next bare /p/<project> opens what you were last looking at.
+  React.useEffect(() => {
+    if (pathView) rememberView(pathView);
+  }, [pathView, rememberView]);
+
   // Drawer navigation TRAIL, not a single id: clicking a subtask from its
   // parent used to replace the drawer outright, leaving no way back (GH #15).
-  // The visible bead is the last entry.
-  const [openStack, setOpenStack] = React.useState<string[]>(
-    initialBeadId ? [initialBeadId] : [],
-  );
+  // The visible bead is the last entry. Seeded from the URL — ?bead= first,
+  // then the permalink path — so a link opens straight into the drawer.
+  const [openStack, setOpenStack] = React.useState<string[]>(() => {
+    const seed = beadParam ?? (segment && !pathView ? segment : null);
+    return seed ? [seed] : [];
+  });
   const rawOpenId = openStack.length ? openStack[openStack.length - 1] : null;
   const [palette, setPalette] = React.useState(false);
   const [create, setCreate] = React.useState<{
@@ -89,22 +129,42 @@ export function AppShell({
       return next;
     });
   }, [index]);
-  // Keep the address bar a permalink: /p/<project>/<bead> while a drawer is
-  // open, /p/<project> otherwise, so the URL is always shareable. Native
-  // history.replaceState (which the app router syncs with, per the shallow-
-  // routing guide) rather than router.replace: drawer browsing shouldn't
-  // re-run the server route or grow the back stack.
+  // Keep the address bar a permalink for whatever is on screen. Native
+  // history.replaceState (which the app router syncs with, per the native
+  // History API section of the linking-and-navigating guide) rather than
+  // router.replace: every URL here selects state that is already loaded, so
+  // re-running the server route would buy a request and a flash for nothing.
+  //
+  // REPLACE, because this effect only ever NORMALIZES: it upgrades a bare
+  // /p/<project> and an old /p/<project>/<bead> permalink in place, and mirrors
+  // drawer opens the way this app always has — the drawer has its own Back
+  // button for the trail, so it stays out of the browser's back stack.
+  // Deliberate navigations (a view, a filter) push their own entry first and
+  // leave this a no-op.
+  //
+  // The path is only ever FILLED IN, never overwritten: when it already names a
+  // view it is the authority, which is what lets back/forward move between two
+  // views without this effect racing the router and dragging the URL back.
   React.useEffect(() => {
-    const base = `/p/${encodeURIComponent(projectId)}`;
-    const target = openId ? `${base}/${encodeURIComponent(openId)}` : base;
-    if (window.location.pathname !== target) {
-      window.history.replaceState(
-        window.history.state,
-        "",
-        target + window.location.search + window.location.hash,
-      );
-    }
-  }, [projectId, openId]);
+    updateLocation((url) => {
+      if (!pathView) url.pathname = `${projectPath}/${view}`;
+      if (openId) url.searchParams.set("bead", openId);
+      else url.searchParams.delete("bead");
+    }, "replace");
+  }, [projectPath, pathView, view, openId, updateLocation]);
+
+  // Back/forward can land on an entry whose bead differs from the one on screen
+  // — open a bead, change a filter (which pushes), close the drawer, then go
+  // Back. The view and the filters are read straight from the URL and follow by
+  // themselves; the trail is React state, so it has to be told.
+  React.useEffect(() => {
+    const onPop = () => {
+      const b = new URLSearchParams(window.location.search).get("bead");
+      setOpenStack((s) => ((s[s.length - 1] ?? null) === b ? s : b ? [b] : []));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   // A missing id would otherwise just be a drawer that silently never opens;
   // say so once the data is in. The ref dedupes across refetches — `index` is

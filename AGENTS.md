@@ -4,6 +4,18 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# URL state: never drive a text input from `useSearchParams`
+
+The App Router applies `history.pushState`/`replaceState` as a transition, so a
+controlled `<input>` whose `value` comes from `useSearchParams()` re-renders one
+character behind and drops keystrokes — typing "adapter schema" into the board's
+search box landed in the URL as `q=aa`. Multi-select facets are fine (a checkbox
+ticking a frame late is invisible); free text is not.
+
+Keep the draft in local state and treat the URL as its OUTPUT, then adopt the
+URL's value back on `popstate` (see `hooks/use-url-filters.ts`). The same shape
+applies anywhere else state has to be both typed into and linkable.
+
 <!-- This section is project-owned and deliberately sits OUTSIDE the generated
      Beads blocks below, which `bd setup` may rewrite. If a generated block ever
      contradicts this section, THIS SECTION WINS. -->

@@ -38,6 +38,7 @@ import {
   typeColor,
   avatarColor,
   initials,
+  displayLabels,
   isBlocked,
   parentOf,
   childrenCountMap,
@@ -260,7 +261,7 @@ function Row({
     id: bead.id,
   });
   const o = beadOrigin(bead, humanAllowlist);
-  const labels = (bead.labels ?? []).filter((l) => l !== "archived").slice(0, 2);
+  const labels = displayLabels(bead).slice(0, 2);
   const openFromKeyboard = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget) return;
     if (e.key === "Enter" || e.key === " ") {

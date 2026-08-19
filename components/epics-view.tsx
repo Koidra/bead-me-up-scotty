@@ -12,6 +12,7 @@ import {
   initials,
   childrenOf,
   collaboratorsOf,
+  displayLabels,
   childProgressMap,
   NO_PROGRESS,
 } from "@/lib/beads-view";
@@ -21,15 +22,11 @@ import type { Bead } from "@/lib/schema";
 const labelChipClass =
   "flex-shrink-0 rounded-md border border-border bg-[var(--surface-2)] px-[6px] py-px font-mono text-[10.5px] text-[var(--text-3)]";
 
-/**
- * Label chips with a "+N" overflow indicator. `archived` is state, not a tag —
- * the Epics screen has no archived toggle at all, so it would be pure noise.
- */
+/** Label chips with a "+N" overflow indicator, over displayLabels(). */
 function LabelChips({ labels, max }: { labels: string[]; max: number }) {
-  const visible = labels.filter((l) => l !== "archived");
-  if (visible.length === 0) return null;
-  const shown = visible.slice(0, max);
-  const hidden = visible.slice(max);
+  if (labels.length === 0) return null;
+  const shown = labels.slice(0, max);
+  const hidden = labels.slice(max);
   return (
     <>
       {shown.map((l) => (
@@ -222,7 +219,7 @@ export function EpicsView({ focusEpic }: { focusEpic?: { id: string; nonce: numb
                       </span>
                       <StatusChip status={e.status} />
                       <PriorityChip p={e.priority} />
-                      <LabelChips labels={e.labels ?? []} max={3} />
+                      <LabelChips labels={displayLabels(e)} max={3} />
                     </div>
                     <div className="mt-[3px] text-[15px] font-semibold tracking-[-.01em]">
                       {e.title}
@@ -316,7 +313,7 @@ export function EpicsView({ focusEpic }: { focusEpic?: { id: string; nonce: numb
                           <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium">
                             {k.title}
                           </span>
-                          <LabelChips labels={k.labels ?? []} max={2} />
+                          <LabelChips labels={displayLabels(k)} max={2} />
                           <PriorityChip p={k.priority} />
                           <OriginBadge origin={o} title={originTitle(k.created_by, o)} />
                           <span

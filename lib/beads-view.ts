@@ -171,6 +171,16 @@ export function collaboratorsOf(b: Bead): string[] {
   return (b.labels ?? []).filter(isCollaboratorLabel).map(collaboratorName);
 }
 
+/**
+ * The labels worth showing as chips. `archived` is state — the views hide on it
+ * and the archive button writes it — and `collaborator:` labels are people, so
+ * neither is a tag anyone should have to read raw; the drawer already keeps both
+ * out of its label editor and shows them as their own controls.
+ */
+export function displayLabels(b: Bead): string[] {
+  return (b.labels ?? []).filter((l) => l !== "archived" && !isCollaboratorLabel(l));
+}
+
 // ---- relationship helpers (need the full bead set for lookups) ----
 
 export function makeIndex(beads: Bead[]): Map<string, Bead> {

@@ -19,6 +19,7 @@ import {
   isBlocked,
   parentOf,
   checklistProgress,
+  displayLabels,
   NO_PROGRESS,
   type ChildProgress,
 } from "@/lib/beads-view";
@@ -41,7 +42,7 @@ export function BeadCard({
   const o = beadOrigin(bead, humanAllowlist);
   const parent = parentOf(bead, index);
   const blocked = isBlocked(bead, index);
-  const visLabels = (bead.labels ?? []).filter((l) => l !== "archived").slice(0, 2);
+  const visLabels = displayLabels(bead).slice(0, 2);
   const depCount = (bead.dependencies ?? []).filter((d) => d.type !== "parent-child").length;
   const commentCount = (bead.comments ?? []).length;
   const checklist = checklistProgress(bead.description);

@@ -14,19 +14,28 @@ import { useApp } from "@/components/app-context";
 import { useSetStatus } from "@/hooks/use-beads";
 import { useOrder, useSetOrder } from "@/hooks/use-order";
 import { useBoardPrefs } from "@/hooks/use-board-prefs";
+import { useUrlFilters } from "@/hooks/use-url-filters";
+import { useUrlState } from "@/hooks/use-url-state";
 import { isBlocked, childrenCountMap, childProgressMap } from "@/lib/beads-view";
 import { FilterBar } from "@/components/filter-bar";
 import {
   matchesFilters,
-  emptyFilters,
   labelOptionsFrom,
   assigneeOptionsFrom,
   epicOptionsFrom,
-  type Filters,
 } from "@/lib/filters";
 import { BOARD_COLUMNS as COLUMNS, sortByOrder as sortCards } from "@/lib/board-columns";
 import { Column } from "./column";
 import type { Bead } from "@/lib/schema";
+
+/** Done-column time windows, in days — the <select> below and the URL share them. */
+const DONE_WINDOWS = [7, 28, 90, 365] as const;
+const DONE_LABELS: Record<number, string> = {
+  7: "Last 7 days",
+  28: "Last 4 weeks",
+  90: "Last 3 months",
+  365: "Last 12 months",
+};
 
 export function Board() {
   const { beads, index, humanAllowlist, openCreate, loading, projectId } = useApp();
@@ -35,8 +44,10 @@ export function Board() {
   const setOrder = useSetOrder(projectId);
   const { prefs: boardPrefs } = useBoardPrefs();
   const orders = React.useMemo(() => orderData?.orders ?? {}, [orderData]);
-  const [filters, setFilters] = React.useState<Filters>(emptyFilters);
-  const [showArchived, setShowArchived] = React.useState(false);
+  // Filters live in the URL, so a filtered board is a link (and the List reads
+  // the same parameters, so switching views keeps them).
+  const { filters, setFilters, showArchived, setShowArchived, clearFilters } = useUrlFilters();
+  const { searchParams, updateUrl } = useUrlState();
   // Derived from ALL beads (not the filtered set) so selecting one label
   // doesn't make the remaining options vanish from the dropdown.
   const labelOptions = React.useMemo(() => labelOptionsFrom(beads), [beads]);
@@ -50,7 +61,17 @@ export function Board() {
   // does no matter what the facets hide.
   const progress = React.useMemo(() => childProgressMap(beads), [beads]);
   // Time-window filter for the Done column: null = all, else "closed within N days" (bead nad).
-  const [doneWindow, setDoneWindow] = React.useState<number | null>(null);
+  // In the URL like every other filter, validated against the offered windows so
+  // a hand-edited ?done=99 falls back to "all time" instead of hiding the column.
+  const doneWindow = DONE_WINDOWS.find((d) => d === Number(searchParams.get("done"))) ?? null;
+  const setDoneWindow = React.useCallback(
+    (days: number | null) =>
+      updateUrl((p) => {
+        if (days === null) p.delete("done");
+        else p.set("done", String(days));
+      }),
+    [updateUrl],
+  );
   // Mount-time "now" for the window cutoff — captured once (day-granular, so it
   // needn't tick) and kept out of render to satisfy the no-impure-call rule.
   const [now] = React.useState(() => Date.now());
@@ -147,11 +168,13 @@ export function Board() {
         <FilterBar
           filters={filters}
           onChange={setFilters}
+          onClearAll={clearFilters}
           labelOptions={labelOptions}
           assigneeOptions={assigneeOptions}
           epicOptions={epicOptions}
           showArchived={showArchived}
           onShowArchived={setShowArchived}
+          ready={beads.length > 0}
         />
 
         <button
@@ -188,10 +211,11 @@ export function Board() {
                         className="cursor-pointer rounded-[7px] border border-border bg-[var(--surface-2)] px-[7px] py-[3px] text-[11px] text-[var(--text-2)] outline-none"
                       >
                         <option value="">All time</option>
-                        <option value="7">Last 7 days</option>
-                        <option value="28">Last 4 weeks</option>
-                        <option value="90">Last 3 months</option>
-                        <option value="365">Last 12 months</option>
+                        {DONE_WINDOWS.map((d) => (
+                          <option key={d} value={d}>
+                            {DONE_LABELS[d]}
+                          </option>
+                        ))}
                       </select>
                     ) : undefined
                   }

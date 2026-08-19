@@ -154,6 +154,23 @@ export function initials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
+/**
+ * Everyone else working on a bead, kept as `collaborator:<name>` labels.
+ * `assignee` is a single column that also carries bd's claim (`--claim`,
+ * `--if-assignee`, the leases table), so it has to stay one DRI; labels are a
+ * real join table, which makes them the only multi-valued field bd offers. The
+ * prefix never reaches the screen — nobody should have to read `collaborator:`
+ * to see who is on a bead.
+ */
+export const COLLABORATOR_PREFIX = "collaborator:";
+export const isCollaboratorLabel = (label: string) => label.startsWith(COLLABORATOR_PREFIX);
+export const collaboratorName = (label: string) => label.slice(COLLABORATOR_PREFIX.length);
+
+/** The people credited on a bead besides its assignee, in label order. */
+export function collaboratorsOf(b: Bead): string[] {
+  return (b.labels ?? []).filter(isCollaboratorLabel).map(collaboratorName);
+}
+
 // ---- relationship helpers (need the full bead set for lookups) ----
 
 export function makeIndex(beads: Bead[]): Map<string, Bead> {

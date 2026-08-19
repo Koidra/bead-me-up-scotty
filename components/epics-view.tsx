@@ -11,8 +11,10 @@ import {
   avatarColor,
   initials,
   childrenOf,
+  collaboratorsOf,
   epicProgress,
 } from "@/lib/beads-view";
+import type { Bead } from "@/lib/schema";
 
 /** Chip styling shared with the list rows and drawer so labels read alike. */
 const labelChipClass =
@@ -40,6 +42,60 @@ function LabelChips({ labels, max }: { labels: string[]; max: number }) {
         </span>
       )}
     </>
+  );
+}
+
+/**
+ * Who is on an epic: the assignee named, then the `collaborator:` people as a
+ * stacked avatar row — same swatch treatment as the child rows below and the
+ * board cards, so a face means the same thing everywhere. Only the DRI gets a
+ * name; this row already carries chips and a progress block, and a second name
+ * would push the title around. Everyone else is an avatar with the names in the
+ * tooltip, which is also why the raw `collaborator:` labels stay out of
+ * LabelChips (they are people, not tags).
+ */
+function EpicPeople({ epic }: { epic: Bead }) {
+  const assignee = epic.assignee ?? "";
+  const others = collaboratorsOf(epic);
+  const shown = others.slice(0, 3);
+  return (
+    <div className="hidden w-[136px] flex-shrink-0 items-center gap-[7px] md:flex">
+      <span
+        title={assignee ? `Assigned to ${assignee}` : "Unassigned"}
+        className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+        style={{ background: avatarColor(assignee) }}
+      >
+        {initials(assignee)}
+      </span>
+      <span
+        className={`min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] ${
+          assignee ? "text-[var(--text-2)]" : "text-[var(--text-3)]"
+        }`}
+      >
+        {assignee || "Unassigned"}
+      </span>
+      {others.length > 0 && (
+        <span
+          title={`Also on this epic: ${others.join(", ")}`}
+          className="flex flex-shrink-0 items-center pl-[5px]"
+        >
+          {shown.map((n) => (
+            <span
+              key={n}
+              className="-ml-[5px] flex h-[19px] w-[19px] items-center justify-center rounded-full border border-[var(--surface)] text-[8.5px] font-semibold text-white"
+              style={{ background: avatarColor(n) }}
+            >
+              {initials(n)}
+            </span>
+          ))}
+          {others.length > shown.length && (
+            <span className="ml-[3px] text-[11px] text-[var(--text-3)]">
+              +{others.length - shown.length}
+            </span>
+          )}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -168,6 +224,7 @@ export function EpicsView({ focusEpic }: { focusEpic?: { id: string; nonce: numb
                       {e.title}
                     </div>
                   </div>
+                  <EpicPeople epic={e} />
                   <div className="flex w-[200px] flex-shrink-0 flex-col items-end gap-[7px]">
                     <div className="flex items-baseline gap-[6px]">
                       <span className="font-mono text-[17px] font-[650] tracking-[-.02em]">
